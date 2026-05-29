@@ -1,130 +1,168 @@
 #include <Wire.h>
-#include <ModbusRtu.h>
 
-#define AS5600_ADDR 0x36
+#define AS5600 0x36
 
+#define RS485_DIR 4
 
-
-#define SLAVE_ID 1  // as maju mundur x
-#define TXEN 2
-
-Modbus slave(SLAVE_ID, Serial, TXEN);
-
-uint16_t holdingRegs[10];
-
-int highByte;
-int lowByte;
+int Highbyte;
+int Lowbyte;
 
 uint16_t raw_angle;
 
 float angle;
+
 float set_angle;
 
-int quadrant;
-int last_quadrant;
+int kuadran;
+int last_kuadran;
 
-bool first_run = true;
+bool first_condition = true;
 
-long rotation = 0;
+int rotation;
 
 float total_angle;
 
-long totalTicks;
+float meter;
 
-void readAS5600()
-{
-    Wire.beginTransmission(AS5600_ADDR);
-    Wire.write(0x0E);
-    Wire.endTransmission();
+float wheelDiameter = 0.05;
 
-    Wire.requestFrom(AS5600_ADDR, 2);
+float circumference =
+  3.14159 * wheelDiameter;
 
-    if(Wire.available() == 2)
-    {
-        highByte = Wire.read();
-        lowByte = Wire.read();
+void setup() {
 
-        raw_angle = (((highByte << 8) | lowByte) & 0x0FFF);
+  Serial.begin(115200);
 
-        angle = raw_angle * 360.0 / 4096.0;
-    }
+  Wire.begin();
+
+  pinMode(RS485_DIR, OUTPUT);
+
+  digitalWrite(RS485_DIR, LOW);
+
+  Output();
+
+  set_angle = angle;
+
+  Serial.println("SENSOR X READY");
 }
 
-void correctAngle()
-{
-    angle = angle - set_angle;
+void loop() {
 
-    if(angle < 0)
-    {
-        angle += 360;
-    }
+  Output();
+
+  CorrectAngle();
+
+  Rotation();
+
+  calculateMeter();
+
+  sendData();
+
+  debugSensor();
+
+  delay(20);
 }
 
-void calculateRotation()
-{
-    if((angle >= 0) && (angle <= 90))
-    {
-        quadrant = 1;
-    }
-    else if((angle > 90) && (angle <= 180))
-    {
-        quadrant = 2;
-    }
-    else if((angle > 180) && (angle <= 270))
-    {
-        quadrant = 3;
-    }
-    else
-    {
-        quadrant = 4;
-    }
+void Output(){
 
-    if(first_run)
-    {
-        last_quadrant = quadrant;
-        first_run = false;
-    }
+  Wire.beginTransmission(AS5600);
 
-    if((quadrant == 1) && (last_quadrant == 4))
-    {
-        rotation++;
-    }
-    else if((quadrant == 4) && (last_quadrant == 1))
-    {
-        rotation--;
-    }
+  Wire.write(0x0E);
 
-    last_quadrant = quadrant;
+  Wire.endTransmission();
 
-    total_angle = (rotation * 360.0) + angle;
+  Wire.requestFrom(AS5600, 2);
 
-    totalTicks = total_angle * (4096.0 / 360.0);
-}
-void setup()
-{
-    Wire.begin();
+  if (Wire.available() == 2){
 
-    Serial.begin(9600);
+    Highbyte = Wire.read();
 
-    slave.begin(9600);
+    Lowbyte = Wire.read();
 
-    readAS5600();
+    raw_angle =
+      (((Highbyte << 8) | Lowbyte) & 0xFFF);
 
-    set_angle = angle;
+    angle =
+      raw_angle * 360.0 / 4096.0;
+  }
 }
 
-void loop()
-{
-    readAS5600();
+void CorrectAngle(){
 
-    correctAngle();
+  angle = angle - set_angle;
 
-    calculateRotation();
+  if (angle < 0){
 
-    uint32_t temp = (uint32_t)totalTicks;
+    angle = angle + 360;
+  }
+}
 
-    holdingRegs[0] = (temp >> 16) & 0xFFFF;
-    holdingRegs[1] = temp & 0xFFFF;
+void Rotation(){
 
-    slave.poll(holdingRegs, 10);
+  if ((angle >= 0) && (angle <= 90)){
+    kuadran = 1;
+  }
+
+  else if ((angle > 90) && (angle <= 180)){
+    kuadran = 2;
+  }
+
+  else if ((angle > 180) && (angle <= 270)){
+    kuadran = 3;
+  }
+
+  else if ((angle > 270) && (angle <= 360)){
+    kuadran = 4;
+  }
+
+  if (first_condition) {
+
+    last_kuadran = kuadran;
+
+    first_condition = false;
+  }
+
+  if ((kuadran == 1) &&
+      (last_kuadran == 4)){
+
+    rotation++;
+  }
+
+  else if ((kuadran == 4) &&
+           (last_kuadran == 1)){
+
+    rotation--;
+  }
+
+  last_kuadran = kuadran;
+
+  total_angle =
+    rotation * 360 + angle;
+}
+
+void calculateMeter() {
+
+  meter =
+    (total_angle / 360.0) *
+    circumference;
+}
+
+void sendData() {
+
+  digitalWrite(RS485_DIR, HIGH);
+
+  Serial.print("X,");
+
+  Serial.println(meter,3);
+
+  delay(2);
+
+  digitalWrite(RS485_DIR, LOW);
+}
+
+void debugSensor() {
+
+  Serial.print("Meter X : ");
+
+  Serial.println(meter);
 }
