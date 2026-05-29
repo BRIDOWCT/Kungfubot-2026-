@@ -43,7 +43,7 @@ void setup() {
 
   set_angle = angle;
 
-  Serial.println("SENSOR X READY");
+  Serial.println("SENSOR Y READY");
 }
 
 void loop() {
@@ -151,7 +151,7 @@ void sendData() {
 
   digitalWrite(RS485_DIR, HIGH);
 
-  Serial.print("X,");
+  Serial.print("Y,");
 
   Serial.println(meter,3);
 
