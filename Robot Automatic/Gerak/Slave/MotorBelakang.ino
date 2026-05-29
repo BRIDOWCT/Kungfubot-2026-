@@ -46,7 +46,7 @@ void loop() {
 
 void parsing(String data) {
 
-  if(data.startsWith("F")) {
+  if(data.startsWith("B")) {
 
     int p1 = data.indexOf(',');
     int p2 = data.indexOf(',', p1 + 1);
