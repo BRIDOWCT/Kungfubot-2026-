@@ -1,218 +1,208 @@
-#include <ModbusMaster.h>
+#include <Wire.h>
 
 #define RXD2 16
 #define TXD2 17
-#define MAX485_RE_DE 4
 
-HardwareSerial RS485(2);
+#define RS485_DIR 4
 
-ModbusMaster encoderX;
-ModbusMaster encoderY;+
+enum RobotState {
+  MOVE_FORWARD,
+  STOP_1,
+  STRAFE_LEFT,
+  STOP_ALL
+};
 
-ModbusMaster motorFL;
-ModbusMaster motorFR;
-ModbusMaster motorBL;
-ModbusMaster motorBR;
-
-float wheelDiameter = 0.08; //8cm
-float wheelCircumference = 3.14159 * wheelDiameter; //kelilng
-float meterPerTick = wheelCircumference / 4096.0; // meter/tick
-
-long xTicks = 0;
-long yTicks = 0;
+RobotState state = MOVE_FORWARD;
 
 float posX = 0;
 float posY = 0;
+float yaw = 0;
 
-long startTicksX = 0;
-long startTicksY = 0;
+float targetForward = 1.0;
+float targetLeft = 2.0;
 
-int robotState = 1;
+String buffer = "";
 
-bool stateInit = false;
+void setup() {
 
-void preTransmission()
-{
-    digitalWrite(MAX485_RE_DE, HIGH);
+  Serial.begin(115200);
+
+  Serial2.begin(115200, SERIAL_8N1, RXD2, TXD2);
+
+  pinMode(RS485_DIR, OUTPUT);
+
+  digitalWrite(RS485_DIR, LOW);
+
+  Serial.println("MASTER READY");
 }
 
-void postTransmission()
-{
-    digitalWrite(MAX485_RE_DE, LOW);
+void loop() {
+
+  receiveData();
+
+  stateRobot();
+
+  debugMonitor();
+
+  delay(20);
 }
 
-long readEncoder(ModbusMaster &node)
-{
-    uint8_t result;
+void stateRobot() {
 
-    result = node.readHoldingRegisters(0, 2);
+  switch(state) {
 
-    if(result == node.ku8MBSuccess)
-    {
-        uint32_t high = node.getResponseBuffer(0);
-        uint32_t low  = node.getResponseBuffer(1);
+    case MOVE_FORWARD:
 
-        uint32_t value = (high << 16) | low;
+      if(posY < targetForward) {
 
-        return (long)value;
+        mecanumMove(120,120,120,120);
+
+      } else {
+
+        stopAll();
+
+        delay(1000);
+
+        state = STRAFE_LEFT;
+      }
+
+    break;
+
+    case STRAFE_LEFT:
+
+      if(abs(posX) < targetLeft) {
+
+        mecanumMove(-120,120,120,-120);
+
+      } else {
+
+        stopAll();
+
+        state = STOP_ALL;
+      }
+
+    break;
+
+    case STOP_ALL:
+
+      stopAll();
+
+    break;
+  }
+}
+
+void mecanumMove(int lf, int rf, int lb, int rb) {
+
+  float correction = yaw * 5.0;
+
+  lf -= correction;
+  rf += correction;
+
+  lb -= correction;
+  rb += correction;
+
+  sendFront(lf, rf);
+
+  delay(2);
+
+  sendBack(lb, rb);
+}
+
+void stopAll() {
+
+  sendFront(0,0);
+
+  delay(2);
+
+  sendBack(0,0);
+}
+
+void sendFront(int lf, int rf) {
+
+  digitalWrite(RS485_DIR, HIGH);
+
+  String data =
+    "F," +
+    String(lf) + "," +
+    String(rf) + "\n";
+
+  Serial2.print(data);
+
+  delay(2);
+
+  digitalWrite(RS485_DIR, LOW);
+}
+
+void sendBack(int lb, int rb) {
+
+  digitalWrite(RS485_DIR, HIGH);
+
+  String data =
+    "B," +
+    String(lb) + "," +
+    String(rb) + "\n";
+
+  Serial2.print(data);
+
+  delay(2);
+
+  digitalWrite(RS485_DIR, LOW);
+}
+
+void receiveData() {
+
+  while(Serial2.available()) {
+
+    char c = Serial2.read();
+
+    if(c == '\n') {
+
+      parsing(buffer);
+
+      buffer = "";
     }
+    else {
 
-    return 0;
-}
-
-
-void sendMotor(ModbusMaster &motor, int direction, int pwm)
-{
-    motor.writeSingleRegister(0, direction);
-    delay(2);
-    motor.writeSingleRegister(1, pwm);
-}
-
-void stopAll()
-{
-    sendMotor(motorFL, 0, 0);
-    sendMotor(motorFR, 0, 0);
-    sendMotor(motorBL, 0, 0);
-    sendMotor(motorBR, 0, 0);
-}
-
-void mecanumForward(int pwm)
-{
-    sendMotor(motorFL, 1, pwm);
-    sendMotor(motorFR, 1, pwm);
-    sendMotor(motorBL, 1, pwm);
-    sendMotor(motorBR, 1, pwm);
-}
-
-void mecanumStrafeRight(int pwm)
-{
-    sendMotor(motorFL, 1, pwm);
-    sendMotor(motorFR, -1, pwm);
-    sendMotor(motorBL, -1, pwm);
-    sendMotor(motorBR, 1, pwm);
-}
-
-void setup()
-{
-    pinMode(MAX485_RE_DE, OUTPUT);
-
-    digitalWrite(MAX485_RE_DE, LOW);
-
-    Serial.begin(115200);
-
-    RS485.begin(9600, SERIAL_8N1, RXD2, TXD2);
-
-    encoderX.begin(1, RS485);
-    encoderY.begin(2, RS485);
-
-    motorFL.begin(3, RS485);
-    motorFR.begin(4, RS485);
-    motorBL.begin(5, RS485);
-    motorBR.begin(6, RS485);
-
-    encoderX.preTransmission(preTransmission);
-    encoderX.postTransmission(postTransmission);
-
-    encoderY.preTransmission(preTransmission);
-    encoderY.postTransmission(postTransmission);
-
-    motorFL.preTransmission(preTransmission);
-    motorFL.postTransmission(postTransmission);
-
-    motorFR.preTransmission(preTransmission);
-    motorFR.postTransmission(postTransmission);
-
-    motorBL.preTransmission(preTransmission);
-    motorBL.postTransmission(postTransmission);
-
-    motorBR.preTransmission(preTransmission);
-    motorBR.postTransmission(postTransmission);
-}
-
-
-void loop()
-{
-    //static bool selesai = false;
-
-    xTicks = readEncoder(encoderX);
-    yTicks = readEncoder(encoderY);
-
-    switch(robotState)
-    {
-        case 0:
-        {
-            stopAll();
-            break;
-        }
-
-        case 1: //
-        {
-            if(!stateInit)
-            {
-                startTicksX = xTicks;
-                stateInit = true;
-
-                Serial.println("STATE 1 : MAJU 1 METER");
-            }
-
-            posX = (xTicks - startTicksX) * meterPerTick;
-
-            mecanumForward(120);
-
-            Serial.print("X = ");
-            Serial.println(posX);
-
-            if(posX >= 1.0)
-            {
-                stopAll();
-
-                robotState = 2;
-                stateInit = false;
-
-                delay(500);
-            }
-
-            break;
-        }
-        case 2:
-        {
-            if(!stateInit)
-            {
-                startTicksY = yTicks;
-                stateInit = true;
-
-                Serial.println("STATE 2 : STRAFE KANAN 2 METER");
-            }
-
-            posY = (yTicks - startTicksY) * meterPerTick;
-
-            mecanumStrafeRight(120);
-
-            Serial.print("Y = ");
-            Serial.println(posY);
-
-            if(posY >= 2.0)
-            {
-                stopAll();
-
-                robotState = 3;
-                stateInit = false;
-
-                delay(500);
-            }
-
-            break;
-        }
-
-        case 3:
-        {
-            stopAll();
-
-            Serial.println("SELESAI");
-
-            break;
-        }
+      buffer += c;
     }
+  }
+}
 
-    delay(10);
+void parsing(String data) {
+
+  if(data.startsWith("X")) {
+
+    int p1 = data.indexOf(',');
+
+    posX = data.substring(p1 + 1).toFloat();
+  }
+
+  else if(data.startsWith("Y")) {
+
+    int p1 = data.indexOf(',');
+
+    posY = data.substring(p1 + 1).toFloat();
+  }
+
+  else if(data.startsWith("I")) {
+
+    int p1 = data.indexOf(',');
+
+    yaw = data.substring(p1 + 1).toFloat();
+  }
+}
+
+void debugMonitor() {
+
+  Serial.print("X : ");
+  Serial.print(posX);
+
+  Serial.print(" | Y : ");
+  Serial.print(posY);
+
+  Serial.print(" | Yaw : ");
+  Serial.print(yaw);
+
+  Serial.print(" | State : ");
+  Serial.println(state);
 }
