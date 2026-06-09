@@ -1,83 +1,107 @@
-#define RS485_DIR 4
+#include <ModbusRtu.h>
 
-#define RPWM_LF 5
-#define LPWM_LF 6
+#define SLAVE_ID 4
+#define EN_PIN   4
 
-#define RPWM_RF 9
-#define LPWM_RF 10
+#define LB_RPWM 3
+#define LB_LPWM 5
+#define RB_RPWM 11
+#define RB_LPWM 6
 
-String buffer = "";
+Modbus slave(SLAVE_ID, Serial, EN_PIN);
 
-void setup() {
+uint16_t holdingRegs[2];
+
+void setMotorLB(int16_t speed)
+{
+  speed = constrain(speed, -80, 80);
+
+  if(speed > 0)
+  {
+    analogWrite(LB_RPWM, speed);
+    analogWrite(LB_LPWM, 0);
+  }
+  else if(speed < 0)
+  {
+    analogWrite(LB_RPWM, 0);
+    analogWrite(LB_LPWM, -speed);
+  }
+  else
+  {
+    analogWrite(LB_RPWM, 0);
+    analogWrite(LB_LPWM, 0);
+  }
+}
+
+void setMotorRB(int16_t speed)
+{
+  speed = constrain(speed, -80, 80);
+
+  if(speed > 0)
+  {
+    analogWrite(RB_RPWM, speed);
+    analogWrite(RB_LPWM, 0);
+  }
+  else if(speed < 0)
+  {
+    analogWrite(RB_RPWM, 0);
+    analogWrite(RB_LPWM, -speed);
+  }
+  else
+  {
+    analogWrite(RB_RPWM, 0);
+    analogWrite(RB_LPWM, 0);
+  }
+}
+
+void stopAllMotor()
+{
+  analogWrite(LB_RPWM, 0);
+  analogWrite(LB_LPWM, 0);
+
+  analogWrite(RB_RPWM, 0);
+  analogWrite(RB_LPWM, 0);
+}
+
+void setup()
+{
+  pinMode(EN_PIN, OUTPUT);
+
+  pinMode(LB_RPWM, OUTPUT);
+  pinMode(LB_LPWM, OUTPUT);
+
+  pinMode(RB_RPWM, OUTPUT);
+  pinMode(RB_LPWM, OUTPUT);
+
+  stopAllMotor();
 
   Serial.begin(115200);
 
-  pinMode(RS485_DIR, OUTPUT);
+  slave.start();
 
-  pinMode(RPWM_LF, OUTPUT);
-  pinMode(LPWM_LF, OUTPUT);
-
-  pinMode(RPWM_RF, OUTPUT);
-  pinMode(LPWM_RF, OUTPUT);
-
-  digitalWrite(RS485_DIR, LOW);
-
-  Serial.println("FRONT READY");
+  // Serial.println("SLAVE REAR ID 4");
 }
 
-void loop() {
+void loop()
+{
+  slave.poll(holdingRegs, 2);
 
-  while(Serial.available()) {
+  int16_t LB = (int16_t)holdingRegs[0];
+  int16_t RB = (int16_t)holdingRegs[1];
 
-    char c = Serial.read();
+  setMotorLB(LB);
+  setMotorRB(RB);
 
-    if(c == '\n') {
+  // static unsigned long lastPrint = 0;
 
-      parsing(buffer);
+  // if(millis() - lastPrint > 500)
+  // {
+  //   lastPrint = millis();
 
-      buffer = "";
-    }
-    else {
+  //   Serial.print("LB : ");
+  //   Serial.print(LB);
 
-      buffer += c;
-    }
-  }
-}
-
-void parsing(String data) {
-
-  if(data.startsWith("B")) {
-
-    int p1 = data.indexOf(',');
-    int p2 = data.indexOf(',', p1 + 1);
-
-    int lf = data.substring(p1 + 1, p2).toInt();
-    int rf = data.substring(p2 + 1).toInt();
-
-    motorDrive(RPWM_LF, LPWM_LF, lf);
-    motorDrive(RPWM_RF, LPWM_RF, rf);
-
-    Serial.print("LF : ");
-    Serial.print(lf);
-
-    Serial.print(" RF : ");
-    Serial.println(rf);
-  }
-}
-
-void motorDrive(int rpwm, int lpwm, int speedMotor) {
-
-  speedMotor = constrain(speedMotor, -255, 255);
-
-  if(speedMotor > 0) {
-
-    analogWrite(rpwm, speedMotor);
-    analogWrite(lpwm, 0);
-  }
-
-  else {
-
-    analogWrite(rpwm, 0);
-    analogWrite(lpwm, abs(speedMotor));
-  }
+  //   Serial.print(" | RB : ");
+  //   Serial.println(RB);
+  // }
 }
