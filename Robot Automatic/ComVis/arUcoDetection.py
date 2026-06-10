@@ -4,7 +4,7 @@ from pymodbus.client import ModbusSerialClient
 import time
 
 SLAVE_GRIPPER = 10
-PORT = "/dev/ttyUSB0"
+PORT = "/dev/USB0"
 BAUDRATE = 115200      
 TARGET_ARUCO_ID = 30
 
