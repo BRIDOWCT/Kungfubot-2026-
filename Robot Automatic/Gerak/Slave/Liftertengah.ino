@@ -3,16 +3,14 @@
 #define SLAVE_ID 11
 #define EN_PIN   4
 
-// Encoder
 #define ENC_A 2
 #define ENC_B 3
 
-// BTS7960
 #define MOTOR_P 5
 #define MOTOR_N 6
 
-#define TARGET_UP_TICK   -3000
-#define TARGET_DOWN_TICK 0
+#define tikup 1800
+#define tikdowb 1000 //posisi terakhir naik di hitung
 
 Modbus slave(SLAVE_ID, Serial, EN_PIN);
 
@@ -29,20 +27,15 @@ enum LiftState
 };
 
 LiftState liftState = IDLE;
-
-// =====================================================
-// ENCODER
-// =====================================================
-
 void encoderA()
 {
   bool A = digitalRead(ENC_A);
   bool B = digitalRead(ENC_B);
 
   if(A == B)
-    encoderTicks--;
-  else
     encoderTicks++;
+  else
+    encoderTicks--;
 }
 
 void encoderB()
@@ -55,12 +48,7 @@ void encoderB()
   else
     encoderTicks--;
 }
-
-// =====================================================
-// MOTOR
-// =====================================================
-
-void stopMotor()
+void berhenti()
 {
   analogWrite(MOTOR_P,0);
   analogWrite(MOTOR_N,0);
@@ -68,27 +56,24 @@ void stopMotor()
 
 void moveUp()
 {
-  analogWrite(MOTOR_P,40);
+  analogWrite(MOTOR_P,80);
   analogWrite(MOTOR_N,0);
 }
 
 void moveDown()
 {
   analogWrite(MOTOR_P,0);
-  analogWrite(MOTOR_N,40);
+  analogWrite(MOTOR_N,80);
 }
-
-// =====================================================
-
 void setup()
 {
   Serial.begin(115200);
 
-  pinMode(MOTOR_P,OUTPUT);
-  pinMode(MOTOR_N,OUTPUT);
-
   pinMode(ENC_A,INPUT_PULLUP);
   pinMode(ENC_B,INPUT_PULLUP);
+
+  pinMode(MOTOR_P,OUTPUT);
+  pinMode(MOTOR_N,OUTPUT);
 
   attachInterrupt(
     digitalPinToInterrupt(ENC_A),
@@ -106,7 +91,7 @@ void setup()
 
   slave.start();
 
-  Serial.println("SLAVE 11 READY");
+  // Serial.println("idup");
 }
 
 void loop()
@@ -123,16 +108,20 @@ void loop()
 
       if(holdingRegs[0] == 1)
       {
+        encoderTicks = 0;
+
         liftState = MOVING_UP;
 
-        Serial.println("LIFT UP");
+        // Serial.println("up");
       }
 
-      if(holdingRegs[0] == 2)
+      else if(holdingRegs[0] == 2)
       {
+        encoderTicks = 0;
+
         liftState = MOVING_DOWN;
 
-        Serial.println("LIFT DOWN");
+        // Serial.println("down");
       }
     }
     break;
@@ -143,13 +132,15 @@ void loop()
 
       moveUp();
 
-      if(encoderTicks <= TARGET_UP_TICK)
+      if(encoderTicks <= -tikup)
       {
-        stopMotor();
+        berhenti();
+
+        holdingRegs[2] = 2;
 
         liftState = FINISHED;
 
-        Serial.println("UP FINISHED");
+        Serial.println("UP DONE");
       }
     }
     break;
@@ -160,46 +151,47 @@ void loop()
 
       moveDown();
 
-      if(encoderTicks >= TARGET_DOWN_TICK)
+      if(encoderTicks >= tikdowb)
       {
-        stopMotor();
+        berhenti();
+
+        holdingRegs[2] = 2;
 
         liftState = FINISHED;
 
-        Serial.println("DOWN FINISHED");
+        Serial.println("DOWN DONE");
       }
     }
     break;
 
     case FINISHED:
     {
-      stopMotor();
-
-      holdingRegs[2] = 2;
+      berhenti();
 
       holdingRegs[0] = 0;
+
+      // liftState = IDLE;
     }
     break;
   }
 
   
-  static unsigned long t=0;
+  // static unsigned long t=0;
 
-  if(millis()-t > 500)
-  {
-    t=millis();
+  // if(millis()-t > 500)
+  // {
+  //   t = millis();
 
-    Serial.print("CMD=");
-    Serial.print(holdingRegs[0]);
+  //   Serial.print("CMD=");
+  //   Serial.print(holdingRegs[0]);
 
-    Serial.print(" TICK=");
-    Serial.print(encoderTicks);
+  //   Serial.print(" TICK=");
+  //   Serial.print(encoderTicks);
 
-    Serial.print(" STATUS=");
-    Serial.print(holdingRegs[2]);
+  //   Serial.print(" STATUS=");
+  //   Serial.print(holdingRegs[2]);
 
-    Serial.print(" STATE=");
-    Serial.println(liftState);
-  }
-  
+  //   Serial.print(" STATE=");
+  //   Serial.println(liftState);
+  // }
 }
